@@ -336,7 +336,8 @@ def user_should_we_change_password(current_role_attrs, user, password, encrypted
         #  3: The size of the 'md5' prefix
         # When the provided password looks like a MD5-hash, value of
         # 'encrypted' is ignored.
-        elif (password.startswith('md5') and len(password) == 32 + 3) or encrypted == 'UNENCRYPTED':
+        elif (password.startswith('md5') and len(password) == 32 + 3) \
+            or password.startswith('SCRAM-SHA-256$') or encrypted == 'UNENCRYPTED':
             if password != current_role_attrs['rolpassword']:
                 pwchanging = True
         elif encrypted == 'ENCRYPTED':
