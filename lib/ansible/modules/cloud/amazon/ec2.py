@@ -968,7 +968,6 @@ def enforce_count(module, ec2, vpc):
     for inst in instances:
 
         if not isinstance(inst, dict):
-            warn_if_public_ip_assignment_changed(module, inst)
             inst = get_instance_info(inst)
         all_instances.append(inst)
 
@@ -1617,7 +1616,8 @@ def warn_if_public_ip_assignment_changed(module, instance):
     assign_public_ip = module.params.get('assign_public_ip')
 
     # Check that public ip assignment is the same and warn if not
-    public_dns_name = getattr(instance, 'public_dns_name', None)
+    public_dns_name = getattr(instance, 'public_dns_name', None) \
+        or getattr(instance, 'public_ip', None)
     if (assign_public_ip or public_dns_name) and (not public_dns_name or assign_public_ip is False):
         module.warn("Unable to modify public ip assignment to {0} for instance {1}. "
                     "Whether or not to assign a public IP is determined during instance creation.".format(assign_public_ip, instance.id))
