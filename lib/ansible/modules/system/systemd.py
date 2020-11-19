@@ -397,14 +397,7 @@ def main():
         # check service data, cannot error out on rc as it changes across versions, assume not found
         (rc, out, err) = module.run_command("%s show '%s'" % (systemctl, unit))
 
-        if request_was_ignored(out) or request_was_ignored(err):
-            # fallback list-unit-files as show does not work on some systems (chroot)
-            # not used as primary as it skips some services (like those using init.d) and requires .service/etc notation
-            (rc, out, err) = module.run_command("%s list-unit-files '%s'" % (systemctl, unit))
-            if rc == 0:
-                is_systemd = True
-
-        elif rc == 0:
+        if rc == 0 and not (request_was_ignored(out) or request_was_ignored(err)):
             # load return of systemctl show into dictionary for easy access and return
             if out:
                 result['status'] = parse_systemctl_show(to_native(out).split('\n'))
@@ -416,9 +409,44 @@ def main():
                 # Check for loading error
                 if is_systemd and not is_masked and 'LoadError' in result['status']:
                     module.fail_json(msg="Error loading unit file '%s': %s" % (unit, result['status']['LoadError']))
+
+        # Workaround for https://github.com/ansible/ansible/issues/71528
+        elif err and rc == 1 and 'Failed to parse bus message' in err:
+            result['status'] = parse_systemctl_show(to_native(out).split('\n'))
+
+            (rc, out, err) = module.run_command("{systemctl} list-unit-files '{unit}*'".format(systemctl=systemctl, unit=unit))
+            is_systemd = unit in out
+
+            (rc, out, err) = module.run_command("{systemctl} is-active '{unit}'".format(systemctl=systemctl, unit=unit))
+            result['status']['ActiveState'] = out.rstrip('\n')
+
         else:
-            # Check for systemctl command
-            module.run_command(systemctl, check_rc=True)
+            # list taken from man systemctl(1) for systemd 244
+            valid_enabled_states = [
+                "enabled",
+                "enabled-runtime",
+                "linked",
+                "linked-runtime",
+                "masked",
+                "masked-runtime",
+                "static",
+                "indirect",
+                "disabled",
+                "generated",
+                "transient"]
+
+            (rc, out, err) = module.run_command("%s is-enabled '%s'" % (systemctl, unit))
+            if out.strip() in valid_enabled_states:
+                is_systemd = True
+            else:
+                # fallback list-unit-files as show does not work on some systems (chroot)
+                # not used as primary as it skips some services (like those using init.d) and requires .service/etc notation
+                (rc, out, err) = module.run_command("%s list-unit-files '%s'" % (systemctl, unit))
+                if rc == 0:
+                    is_systemd = True
+                else:
+                    # Check for systemctl command
+                    module.run_command(systemctl, check_rc=True)
 
         # Does service exist?
         found = is_systemd or is_initd
