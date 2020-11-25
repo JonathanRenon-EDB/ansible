@@ -2481,17 +2481,12 @@ class ContainerManager(DockerBaseClass):
             # may now have the same name but is actually different
             if self.parameters.labels:
                 config = self.client.inspect_container(self.parameters.name)
-                if not config.get('Config'):
-                    self.fail("absent: Error parsing container properties. Config missing.")
-
-                if 'Labels' not in config['Config']:
-                    self.fail("absent: Error config and container labels do not match.")
                 labels = config['Config']['Labels']
                 if not (self.parameters.labels.items() <= labels.items()):
-                    self.fail("absent: Error config and container labels do not match.")
+                    return None
             if container.running:
                 self.diff_tracker.add('running', parameter=False, active=True)
-            self.container_stop(container.Id)
+                self.container_stop(container.Id)
             self.diff_tracker.add('exists', parameter=False, active=True)
             self.container_remove(container.Id)
 
