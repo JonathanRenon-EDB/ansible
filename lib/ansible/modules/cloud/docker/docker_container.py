@@ -2471,30 +2471,29 @@ class ContainerManager(DockerBaseClass):
         self.facts = container.raw
 
     def absent(self):
-        if not self.parameters.labels:
-            self.fail("absent: Error parsing config. Labels missing.")
+
         container = self._get_container(self.parameters.name)
         if container.exists:
 
-            # RM19950
-            # We have added this additional check to make sure that this
-            # about-to-be-deprovisioned container actually belongs to the
-            # cluster being deprovisioned.
-            config = self.client.inspect_container(self.parameters.name)
-            if not config.get('Config'):
-                self.fail("absent: Error parsing container properties. Config missing.")
-            # All container provisioned via tpaexec should have Labels and Cluster
-            # properties duly defined. If not, bail out because we didn't provision
-            # this container.
-            if 'Labels' not in config['Config'] or 'Cluster' not in config['Config']['Labels']:
-                self.fail("absent: Error parsing container config. Cluster label missing.")
-            cluster = config['Config']['Labels']['Cluster']
-            if cluster == self.parameters.labels['Cluster']:
-                if container.running:
-                    self.diff_tracker.add('running', parameter=False, active=True)
-                    self.container_stop(container.Id)
-                self.diff_tracker.add('exists', parameter=False, active=True)
-                self.container_remove(container.Id)
+            # If labels are defined, let's compare those as well to make sure
+            # the container in question is actually the one user intends to remove.
+            # This safeguards against the possibility of removing a container that
+            # may now have the same name but is actually different
+            if self.parameters.labels:
+                config = self.client.inspect_container(self.parameters.name)
+                if not config.get('Config'):
+                    self.fail("absent: Error parsing container properties. Config missing.")
+
+                if 'Labels' not in config['Config']:
+                    self.fail("absent: Error config and container labels do not match.")
+                labels = config['Config']['Labels']
+                if not (self.parameters.labels.items() <= labels.items()):
+                    self.fail("absent: Error config and container labels do not match.")
+            if container.running:
+                self.diff_tracker.add('running', parameter=False, active=True)
+            self.container_stop(container.Id)
+            self.diff_tracker.add('exists', parameter=False, active=True)
+            self.container_remove(container.Id)
 
     def fail(self, msg, **kwargs):
         self.client.fail(msg, **kwargs)
