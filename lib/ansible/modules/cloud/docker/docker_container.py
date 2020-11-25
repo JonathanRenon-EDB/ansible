@@ -2471,13 +2471,30 @@ class ContainerManager(DockerBaseClass):
         self.facts = container.raw
 
     def absent(self):
+        if not self.parameters.labels:
+            self.fail("absent: Error parsing config. Labels missing.")
         container = self._get_container(self.parameters.name)
         if container.exists:
-            if container.running:
-                self.diff_tracker.add('running', parameter=False, active=True)
-                self.container_stop(container.Id)
-            self.diff_tracker.add('exists', parameter=False, active=True)
-            self.container_remove(container.Id)
+
+            # RM19950
+            # We have added this additional check to make sure that this
+            # about-to-be-deprovisioned container actually belongs to the
+            # cluster being deprovisioned.
+            config = self.client.inspect_container(self.parameters.name)
+            if not config.get('Config'):
+                self.fail("absent: Error parsing container properties. Config missing.")
+            # All container provisioned via tpaexec should have Labels and Cluster
+            # properties duly defined. If not, bail out because we didn't provision
+            # this container.
+            if 'Labels' not in config['Config'] or 'Cluster' not in config['Config']['Labels']:
+                self.fail("absent: Error parsing container config. Cluster label missing.")
+            cluster = config['Config']['Labels']['Cluster']
+            if cluster == self.parameters.labels['Cluster']:
+                if container.running:
+                    self.diff_tracker.add('running', parameter=False, active=True)
+                    self.container_stop(container.Id)
+                self.diff_tracker.add('exists', parameter=False, active=True)
+                self.container_remove(container.Id)
 
     def fail(self, msg, **kwargs):
         self.client.fail(msg, **kwargs)
