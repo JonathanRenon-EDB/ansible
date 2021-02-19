@@ -76,6 +76,8 @@ def get_shell_plugin(shell_type=None, executable=None):
         else:
             raise AnsibleError("Either a shell type or a shell executable must be provided ")
 
+    if shell_type == 'bash':
+        shell_type = 'sh'
     shell = shell_loader.get(shell_type)
     if not shell:
         raise AnsibleError("Could not find the shell plugin required (%s)." % shell_type)
