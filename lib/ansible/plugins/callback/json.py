@@ -155,6 +155,8 @@ class CallbackModule(CallbackBase):
         result_copy = result._result.copy()
         result_copy.update(on_info)
         result_copy['action'] = task.action
+        if result_copy.get('failed', False) and kwargs.get('ignore_errors', False):
+            result_copy['failed'] = 'ignored'
 
         task_result = self._find_result_task(host, task)
 
