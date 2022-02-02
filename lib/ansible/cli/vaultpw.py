@@ -10,7 +10,7 @@ import subprocess
 from ansible import constants as C
 from ansible import context
 from ansible.cli import CLI
-from ansible.cli.arguments import optparse_helpers as opt_help
+from ansible.cli.arguments import option_helpers as opt_help
 from ansible.errors import AnsibleError, AnsibleOptionsError
 from ansible.module_utils._text import to_text, to_bytes
 from ansible.parsing.dataloader import DataLoader
@@ -23,41 +23,49 @@ class VaultpwCLI(CLI):
     '''
     '''
 
-    VALID_ACTIONS = frozenset(("show", "store"))
-
     def __init__(self, args):
-        super().__init__(args)
 
         self.encrypt_secret = None
         self.encrypt_vault_id = None
-
-    def set_action(self):
-        super().set_action()
-
-        if self.action == "show":
-            self.parser.set_usage("usage: %prog show /path/to/example_password.yml")
-        elif self.action == "store":
-            self.parser.set_usage("usage: %prog store /path/to/example_password.yml [-c command]")
-            self.parser.add_option('-c', '--command', dest='password_command',
-                                   action='store', type='string',
-                                   help="command to run to obtain a password")
-            self.parser.add_option('--encrypt-vault-id', default=[], dest='encrypt_vault_id',
-                                   action='store', type='string',
-                                   help='the vault id used to encrypt (required if more than one vault-id is provided)')
+        super(VaultpwCLI, self).__init__(args)
 
     def init_parser(self):
-        super().init_parser(
-            usage="usage: %%prog [%s] [options] /path/to/example_password.yml" % "|".join(sorted(self.VALID_ACTIONS)),
+        super(VaultpwCLI, self).init_parser(
             desc="utility to store or fetch vault-encrypted passwords in YAML inventory files",
             epilog="\nSee '%s <command> --help' for more information on a specific command.\n\n" % os.path.basename(sys.argv[0])
         )
-        opt_help.add_vault_options(self.parser)
+        common = opt_help.argparse.ArgumentParser(add_help=False)
+        opt_help.add_vault_options(common)
 
-        self.set_action()
+        subparsers = self.parser.add_subparsers(dest="action")
+        subparsers.required = True
 
-    def post_process_args(self, options, args):
-        options, args = super().post_process_args(options, args)
-        self.validate_conflicts(options, vault_opts=True, vault_rekey_opts=False)
+        show_parser = subparsers.add_parser(
+            "show", help="Show a password", parents=[common]
+        )
+        show_parser.set_defaults(func=self.execute_show)
+        show_parser.add_argument(
+            "args", help="Filename", metavar="file_name", nargs="*"
+        )
+        store_parser = subparsers.add_parser(
+            "store", help="store a password", parents=[common]
+        )
+        store_parser.set_defaults(func=self.execute_store)
+
+        store_parser.add_argument(
+            "args", help="Filename", metavar="file_name", nargs="*"
+        )
+        store_parser.add_argument(
+            "-c",
+            "--command",
+            dest="password_command",
+            action="store",
+            help="command to run to obtain a password",
+        )
+
+    def post_process_args(self, options):
+        options = super(VaultpwCLI, self).post_process_args(options)
+        self.validate_conflicts(options)
 
         display.verbosity = options.verbosity
 
@@ -66,45 +74,57 @@ class VaultpwCLI(CLI):
                 if u';' in vault_id:
                     raise AnsibleOptionsError("Invalid character ';' found in vault id: %s" % vault_id)
 
-        return options, args
+        return options
 
     def run(self):
         super().run()
         self.loader = DataLoader()
 
         vault_ids = C.DEFAULT_VAULT_IDENTITY_LIST + list(context.CLIARGS['vault_ids'])
-        vault_secrets = self.setup_vault_secrets(
-            self.loader, vault_ids=vault_ids,
-            vault_password_files=list(context.CLIARGS['vault_password_files']),
-            ask_vault_pass=context.CLIARGS['ask_vault_pass']
-        )
 
-        if not vault_secrets:
-            raise AnsibleOptionsError("A vault password is required to use ansible-vault")
+        action = context.CLIARGS["action"]
+        if action in ["show", "store"]:
+            vault_secrets = self.setup_vault_secrets(
+                self.loader,
+                vault_ids=vault_ids,
+                vault_password_files=list(context.CLIARGS["vault_password_files"]),
+                ask_vault_pass=context.CLIARGS["ask_vault_pass"],
+            )
 
-        encrypt_vault_id = context.CLIARGS.get('encrypt_vault_id') or C.DEFAULT_VAULT_ENCRYPT_IDENTITY
-        if len(vault_secrets) > 1 and not encrypt_vault_id:
-            raise AnsibleOptionsError("Use '--encrypt-vault-id id' to choose one of the following vault ids to use for encryption: %s" %
-                                      ','.join([x[0] for x in vault_secrets]))
+            if not vault_secrets:
+                raise AnsibleOptionsError(
+                    "A vault password is required to use ansible-vault"
+                )
 
-        encrypt_secret = match_encrypt_secret(vault_secrets,
-                                              encrypt_vault_id=encrypt_vault_id)
+            encrypt_vault_id = (
+                context.CLIARGS.get("encrypt_vault_id")
+                or C.DEFAULT_VAULT_ENCRYPT_IDENTITY
+            )
+            if len(vault_secrets) > 1 and not encrypt_vault_id:
+                raise AnsibleOptionsError(
+                    "Use '--encrypt-vault-id id' to choose one of the following vault ids to use for encryption: %s"
+                    % ",".join([x[0] for x in vault_secrets])
+                )
 
-        self.encrypt_vault_id = encrypt_secret[0]
-        self.encrypt_secret = encrypt_secret[1]
+            encrypt_secret = match_encrypt_secret(
+                vault_secrets, encrypt_vault_id=encrypt_vault_id
+            )
 
-        self.loader.set_vault_secrets(vault_secrets)
+            self.encrypt_vault_id = encrypt_secret[0]
+            self.encrypt_secret = encrypt_secret[1]
 
-        self.vault = VaultLib(vault_secrets)
+            self.loader.set_vault_secrets(vault_secrets)
 
-        if len(context.CLIARGS['args']) != 1:
+            self.vault = VaultLib(vault_secrets)
+
+        if len(context.CLIARGS["args"]) != 1:
             raise AnsibleOptionsError("Exactly one inventory file must be specified")
 
         self.file = os.path.expanduser(context.CLIARGS['args'][0])
 
         old_umask = os.umask(0o077)
 
-        self.execute()
+        context.CLIARGS["func"]()
 
         os.umask(old_umask)
 
