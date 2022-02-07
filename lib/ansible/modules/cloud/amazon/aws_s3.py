@@ -802,6 +802,7 @@ def main():
         if not path_check(src):
             module.fail_json(msg="Local object for PUT does not exist")
 
+        keyrtn = None
         if bucketrtn:
             keyrtn = key_check(module, s3, bucket, obj, version=version, validate=validate)
         else:

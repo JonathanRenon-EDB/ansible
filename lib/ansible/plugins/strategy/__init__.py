@@ -30,6 +30,7 @@ import time
 from collections import deque
 from multiprocessing import Lock
 from jinja2.exceptions import UndefinedError
+from termios import tcflush, TCIFLUSH
 
 from ansible import constants as C
 from ansible import context
@@ -1089,13 +1090,14 @@ class StrategyBase:
     def _take_step(self, task, host=None):
 
         ret = False
-        msg = u'Perform task: %s ' % task
+        msg = ''
         if host:
-            msg += u'on %s ' % host
-        msg += u'(N)o/(y)es/(c)ontinue: '
+            msg += u'[%s] ' % host
+        msg += u'(Y)es/(n)o/(c)ontinue: '
+        tcflush(sys.stdin, TCIFLUSH)
         resp = display.prompt(msg)
 
-        if resp.lower() in ['y', 'yes']:
+        if resp.lower() in ['', 'y', 'yes']:
             display.debug("User ran task")
             ret = True
         elif resp.lower() in ['c', 'continue']:
@@ -1104,8 +1106,6 @@ class StrategyBase:
             ret = True
         else:
             display.debug("User skipped task")
-
-        display.banner(msg)
 
         return ret
 
@@ -1151,6 +1151,13 @@ class StrategyBase:
                     hostname = host.get_name()
                     self._variable_manager.clear_facts(hostname)
                 msg = "facts cleared"
+            else:
+                skipped = True
+        elif meta_action == 'reload_vars':
+            if _evaluate_conditional(target_host):
+                for host in self._inventory.get_hosts(iterator._play.hosts):
+                    self._variable_manager.get_vars(host=host, use_cache=False)
+                msg = "vars reloaded"
             else:
                 skipped = True
         elif meta_action == 'clear_host_errors':

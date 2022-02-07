@@ -578,6 +578,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.ec2 import get_aws_connection_info, ec2_argument_spec, ec2_connect
 from ansible.module_utils.six import get_function_code, string_types
 from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.cloud import CloudRetry
 
 try:
     import boto.ec2
@@ -589,6 +590,20 @@ try:
 except ImportError:
     HAS_BOTO = False
 
+
+class EC2Retry(CloudRetry):
+    base_class = boto.exception.BotoServerError
+
+    @staticmethod
+    def status_code_from_exception(e):
+        return [e.error_code, e.error_message]
+
+    @staticmethod
+    def found(rc, catch_extra_error_codes=None):
+        if rc[0] == 'InvalidParameterValue' and 'iamInstanceProfile.name is invalid' in rc[1]:
+            return True
+
+        return False
 
 def find_running_instances_by_count_tag(module, ec2, vpc, count_tag, zone=None):
 
@@ -943,12 +958,14 @@ def enforce_count(module, ec2, vpc):
     for inst in instances:
 
         if not isinstance(inst, dict):
-            warn_if_public_ip_assignment_changed(module, inst)
             inst = get_instance_info(inst)
         all_instances.append(inst)
 
     return (all_instances, instance_dict_array, changed_instance_ids, changed)
 
+@EC2Retry.backoff(tries=3, delay=5, backoff=2.0)
+def run_instances(ec2, **params):
+    return ec2.run_instances(**params)
 
 def create_instances(module, ec2, vpc, override_count=None):
     """
@@ -1155,7 +1172,7 @@ def create_instances(module, ec2, vpc, override_count=None):
                 params['instance_initiated_shutdown_behavior'] = instance_initiated_shutdown_behavior or 'stop'
 
                 try:
-                    res = ec2.run_instances(**params)
+                    res = run_instances(ec2, **params)
                 except boto.exception.EC2ResponseError as e:
                     if (params['instance_initiated_shutdown_behavior'] != 'terminate' and
                             "InvalidParameterCombination" == e.error_code):
@@ -1589,7 +1606,8 @@ def warn_if_public_ip_assignment_changed(module, instance):
     assign_public_ip = module.params.get('assign_public_ip')
 
     # Check that public ip assignment is the same and warn if not
-    public_dns_name = getattr(instance, 'public_dns_name', None)
+    public_dns_name = getattr(instance, 'public_dns_name', None) \
+        or getattr(instance, 'public_ip', None)
     if (assign_public_ip or public_dns_name) and (not public_dns_name or assign_public_ip is False):
         module.warn("Unable to modify public ip assignment to {0} for instance {1}. "
                     "Whether or not to assign a public IP is determined during instance creation.".format(assign_public_ip, instance.id))
