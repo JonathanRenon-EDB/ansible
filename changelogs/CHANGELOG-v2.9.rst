@@ -5,6 +5,73 @@ Ansible 2.9 "Immigrant Song" Release Notes
 .. contents:: Topics
 
 
+v2.9.27
+=======
+
+Release Summary
+---------------
+
+| Release Date: 2021-10-11
+| `Porting Guide <https://docs.ansible.com/ansible/devel/porting_guides.html>`__
+
+
+Minor Changes
+-------------
+
+- ansible-test - Remove obsolete ``junos`` entries for the ``--remote`` option.
+
+Security Fixes
+--------------
+
+- Do not include params in exception when a call to ``set_options`` fails. Additionally, block the exception that is returned from being displayed to stdout. (CVE-2021-3620)
+
+Bugfixes
+--------
+
+- ansible-test - Update ``isort`` constraint from version 4.3.15 to 4.3.16 to prevent ``pylint`` from failing with warnings reported as errors.
+
+v2.9.26
+=======
+
+Release Summary
+---------------
+
+| Release Date: 2021-09-13
+| `Porting Guide <https://docs.ansible.com/ansible/devel/porting_guides.html>`__
+
+
+Bugfixes
+--------
+
+- make previous versions compatible we new attributres w/o implementing them.
+
+v2.9.25
+=======
+
+Release Summary
+---------------
+
+| Release Date: 2021-08-16
+| `Porting Guide <https://docs.ansible.com/ansible/devel/porting_guides.html>`__
+
+
+Minor Changes
+-------------
+
+- Allow unsafe_writes to be set on target via env var, for those targets that need a blanket setting.
+
+Bugfixes
+--------
+
+- Added unsafe_writes test.
+- Enabled unsafe_writes for get_url which was ignoring the paramter.
+- Restored unsafe_writes functionality which was being skipped.
+- Setup virtualization_facts - add RHV type. This change will fully work for VMs in clusters at cluster level 4.4 or newer (https://github.com/ansible/ansible/pull/72876).
+- ansible-test - allow to ignore ``rstcheck`` errors (https://github.com/ansible/ansible/pull/75272).
+- callback default, now uses task delegate_to instead of delegate vars to display delegate to host
+- callbacks, restores missing delegate_vars
+- dnf module - Use all components of a package name to determine if it's installed (https://github.com/ansible/ansible/issues/75311).
+
 v2.9.24
 =======
 
