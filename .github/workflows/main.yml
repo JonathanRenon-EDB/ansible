@@ -31,10 +31,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install build wheel
 
-    - name: Build package
-      run: |
-        python -m build
-
     - name: Build sdist and wheel packages
       run: |
         python setup.py sdist bdist_wheel bdist_egg
